@@ -31,6 +31,7 @@ import (
 	conf "github.com/elastic/elastic-agent-libs/config"
 	"github.com/elastic/elastic-agent-libs/logp"
 	"github.com/elastic/elastic-agent-libs/mapstr"
+	"github.com/elastic/go-concert/ctxtool"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	aws_config "github.com/aws/aws-sdk-go-v2/config"
@@ -98,8 +99,9 @@ func (s *assetsAWS) Test(_ input.TestContext) error {
 	return nil
 }
 
-func (s *assetsAWS) Run(ctx input.Context, publisher stateless.Publisher) error {
-	log := ctx.Logger.With("assets_aws")
+func (s *assetsAWS) Run(inputCtx input.Context, publisher stateless.Publisher) error {
+	ctx := ctxtool.FromCanceller(inputCtx.Cancelation)
+	log := inputCtx.Logger.With("assets_aws")
 
 	log.Info("aws asset collector run started")
 	defer log.Info("aws asset collector run stopped")
@@ -115,12 +117,10 @@ func (s *assetsAWS) Run(ctx input.Context, publisher stateless.Publisher) error 
 	ticker := time.NewTicker(s.config.Config.Period)
 	for {
 		select {
-		case <-ctx.Cancelation.Done():
+		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
 			for _, region := range regions {
-				// fixme: it seems weird i can't use the input context here
-				ctx := context.Background()
 				cfg, err := aws_config.LoadDefaultConfig(
 					ctx,
 					aws_config.WithRegion(region),
