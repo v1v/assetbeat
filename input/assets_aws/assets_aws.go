@@ -153,7 +153,7 @@ func collectEC2Assets(ctx context.Context, cfg aws.Config, log *logp.Logger, pub
 		if instance.SubnetId != nil {
 			parents = []string{*instance.SubnetId}
 		}
-		publishAWSAsset(publisher, cfg.Region, "unknown", "aws.ec2.instance", *instance.InstanceId, parents, nil, mapstr.M{
+		publishAWSAsset(publisher, cfg.Region, "aws.ec2.instance", *instance.InstanceId, parents, nil, mapstr.M{
 			"tags":  instance.Tags,
 			"state": string(instance.State.Name),
 		})
@@ -169,7 +169,7 @@ func collectVPCAssets(ctx context.Context, cfg aws.Config, log *logp.Logger, pub
 	}
 
 	for _, vpc := range vpcs {
-		publishAWSAsset(publisher, cfg.Region, "unknown", "aws.vpc", *vpc.VpcId, nil, nil, mapstr.M{
+		publishAWSAsset(publisher, cfg.Region, "aws.vpc", *vpc.VpcId, nil, nil, mapstr.M{
 			"tags":      vpc.Tags,
 			"isDefault": vpc.IsDefault,
 		})
@@ -185,7 +185,7 @@ func collectSubnetAssets(ctx context.Context, cfg aws.Config, log *logp.Logger, 
 	}
 
 	for _, subnet := range subnets {
-		publishAWSAsset(publisher, cfg.Region, "unknown", "aws.subnet", *subnet.SubnetId, []string{*subnet.VpcId}, nil, mapstr.M{
+		publishAWSAsset(publisher, cfg.Region, "aws.subnet", *subnet.SubnetId, []string{*subnet.VpcId}, nil, mapstr.M{
 			"tags":  subnet.Tags,
 			"state": string(subnet.State),
 		})
@@ -206,7 +206,7 @@ func collectEKSAssets(ctx context.Context, cfg aws.Config, log *logp.Logger, pub
 			if clusterDetail.ResourcesVpcConfig.VpcId != nil {
 				parents = []string{*clusterDetail.ResourcesVpcConfig.VpcId}
 			}
-			publishAWSAsset(publisher, cfg.Region, "unknown", "k8s.cluster", *clusterDetail.Arn, parents, nil, mapstr.M{
+			publishAWSAsset(publisher, cfg.Region, "k8s.cluster", *clusterDetail.Arn, parents, nil, mapstr.M{
 				"tags":   clusterDetail.Tags,
 				"status": clusterDetail.Status,
 			})
@@ -293,15 +293,14 @@ func listEKSClusters(ctx context.Context, client *eks.Client) ([]string, error) 
 	return clusters, nil
 }
 
-func publishAWSAsset(publisher stateless.Publisher, region, assetKind, assetType, assetId string, parents, children []string, metadata mapstr.M) {
+func publishAWSAsset(publisher stateless.Publisher, region, assetType, assetId string, parents, children []string, metadata mapstr.M) {
 	asset := mapstr.M{
 		"cloud.provider": "aws",
 		"cloud.region":   region,
 
-		"asset.kind": assetKind,
 		"asset.type": assetType,
 		"asset.id":   assetId,
-		"asset.ean":  fmt.Sprintf("%s:%s:%s", assetKind, assetType, assetId),
+		"asset.ean":  fmt.Sprintf("%s:%s", assetType, assetId),
 	}
 
 	if parents != nil {
