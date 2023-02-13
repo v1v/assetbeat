@@ -115,28 +115,38 @@ func (s *assetsAWS) Run(inputCtx input.Context, publisher stateless.Publisher) e
 	}
 
 	ticker := time.NewTicker(s.config.Config.Period)
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+		collectAWSAssets(ctx, regions, log, credentialsProvider, publisher)
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			for _, region := range regions {
-				cfg, err := aws_config.LoadDefaultConfig(
-					ctx,
-					aws_config.WithRegion(region),
-					aws_config.WithCredentialsProvider(credentialsProvider),
-				)
-				if err != nil {
-					log.Errorf("failed to create AWS config for %s: %v", region, err)
-					continue
-				}
-
-				go collectEKSAssets(ctx, cfg, log, publisher)
-				go collectEC2Assets(ctx, cfg, log, publisher)
-				go collectVPCAssets(ctx, cfg, log, publisher)
-				go collectSubnetAssets(ctx, cfg, log, publisher)
-			}
+			collectAWSAssets(ctx, regions, log, credentialsProvider, publisher)
 		}
+	}
+}
+
+func collectAWSAssets(ctx context.Context, regions []string, log *logp.Logger, credentialsProvider aws.CredentialsProvider, publisher stateless.Publisher) {
+	for _, region := range regions {
+		cfg, err := aws_config.LoadDefaultConfig(
+			ctx,
+			aws_config.WithRegion(region),
+			aws_config.WithCredentialsProvider(credentialsProvider),
+		)
+		if err != nil {
+			log.Errorf("failed to create AWS config for %s: %v", region, err)
+			continue
+		}
+
+		go collectEKSAssets(ctx, cfg, log, publisher)
+		go collectEC2Assets(ctx, cfg, log, publisher)
+		go collectVPCAssets(ctx, cfg, log, publisher)
+		go collectSubnetAssets(ctx, cfg, log, publisher)
 	}
 }
 
