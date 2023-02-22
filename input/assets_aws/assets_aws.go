@@ -25,6 +25,7 @@ import (
 
 	input "github.com/elastic/inputrunner/input/v2"
 	stateless "github.com/elastic/inputrunner/input/v2/input-stateless"
+	"github.com/elastic/inputrunner/util"
 
 	"github.com/elastic/beats/v7/libbeat/beat"
 	"github.com/elastic/beats/v7/libbeat/feature"
@@ -34,6 +35,7 @@ import (
 	"github.com/elastic/go-concert/ctxtool"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	aws_config "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -41,6 +43,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	types_eks "github.com/aws/aws-sdk-go-v2/service/eks/types"
 )
+
+type EC2Instance struct {
+	InstanceID string
+	OwnerID    string
+	SubnetID   string
+	Metadata   mapstr.M
+}
 
 func Plugin() input.Plugin {
 	return input.Plugin{
@@ -160,13 +169,10 @@ func collectEC2Assets(ctx context.Context, cfg aws.Config, log *logp.Logger, pub
 
 	for _, instance := range instances {
 		var parents []string
-		if instance.SubnetId != nil {
-			parents = []string{*instance.SubnetId}
+		if instance.SubnetID != "" {
+			parents = []string{instance.SubnetID}
 		}
-		publishAWSAsset(publisher, cfg.Region, "aws.ec2.instance", *instance.InstanceId, parents, nil, mapstr.M{
-			"tags":  instance.Tags,
-			"state": string(instance.State.Name),
-		})
+		publishAWSAsset(publisher, cfg.Region, instance.OwnerID, "aws.ec2.instance", instance.InstanceID, parents, nil, instance.Metadata)
 	}
 }
 
@@ -179,7 +185,7 @@ func collectVPCAssets(ctx context.Context, cfg aws.Config, log *logp.Logger, pub
 	}
 
 	for _, vpc := range vpcs {
-		publishAWSAsset(publisher, cfg.Region, "aws.vpc", *vpc.VpcId, nil, nil, mapstr.M{
+		publishAWSAsset(publisher, cfg.Region, *vpc.OwnerId, "aws.vpc", *vpc.VpcId, nil, nil, mapstr.M{
 			"tags":      vpc.Tags,
 			"isDefault": vpc.IsDefault,
 		})
@@ -195,7 +201,7 @@ func collectSubnetAssets(ctx context.Context, cfg aws.Config, log *logp.Logger, 
 	}
 
 	for _, subnet := range subnets {
-		publishAWSAsset(publisher, cfg.Region, "aws.subnet", *subnet.SubnetId, []string{*subnet.VpcId}, nil, mapstr.M{
+		publishAWSAsset(publisher, cfg.Region, *subnet.OwnerId, "aws.subnet", *subnet.SubnetId, []string{*subnet.VpcId}, nil, mapstr.M{
 			"tags":  subnet.Tags,
 			"state": string(subnet.State),
 		})
@@ -216,7 +222,9 @@ func collectEKSAssets(ctx context.Context, cfg aws.Config, log *logp.Logger, pub
 			if clusterDetail.ResourcesVpcConfig.VpcId != nil {
 				parents = []string{*clusterDetail.ResourcesVpcConfig.VpcId}
 			}
-			publishAWSAsset(publisher, cfg.Region, "k8s.cluster", *clusterDetail.Arn, parents, nil, mapstr.M{
+
+			clusterARN, _ := arn.Parse(*clusterDetail.Arn)
+			publishAWSAsset(publisher, cfg.Region, clusterARN.AccountID, "k8s.cluster", *clusterDetail.Arn, parents, nil, mapstr.M{
 				"tags":   clusterDetail.Tags,
 				"status": clusterDetail.Status,
 			})
@@ -275,8 +283,8 @@ func describeSubnets(ctx context.Context, client *ec2.Client) ([]types_ec2.Subne
 	return subnets, nil
 }
 
-func describeEC2Instances(ctx context.Context, client *ec2.Client) ([]types_ec2.Instance, error) {
-	instances := make([]types_ec2.Instance, 0, 100)
+func describeEC2Instances(ctx context.Context, client *ec2.Client) ([]EC2Instance, error) {
+	instances := make([]EC2Instance, 0, 100)
 	paginator := ec2.NewDescribeInstancesPaginator(client, &ec2.DescribeInstancesInput{})
 	for paginator.HasMorePages() {
 		resp, err := paginator.NextPage(ctx)
@@ -284,7 +292,20 @@ func describeEC2Instances(ctx context.Context, client *ec2.Client) ([]types_ec2.
 			return nil, err
 		}
 		for _, reservation := range resp.Reservations {
-			instances = append(instances, reservation.Instances...)
+			instances = append(instances, util.Map(func(i types_ec2.Instance) EC2Instance {
+				inst := EC2Instance{
+					InstanceID: *i.InstanceId,
+					OwnerID:    *reservation.OwnerId,
+					Metadata: mapstr.M{
+						"tags":  i.Tags,
+						"state": string(i.State.Name),
+					},
+				}
+				if i.SubnetId != nil {
+					inst.SubnetID = *i.SubnetId
+				}
+				return inst
+			}, reservation.Instances)...)
 		}
 	}
 	return instances, nil
@@ -303,10 +324,11 @@ func listEKSClusters(ctx context.Context, client *eks.Client) ([]string, error) 
 	return clusters, nil
 }
 
-func publishAWSAsset(publisher stateless.Publisher, region, assetType, assetId string, parents, children []string, metadata mapstr.M) {
+func publishAWSAsset(publisher stateless.Publisher, region, account, assetType, assetId string, parents, children []string, metadata mapstr.M) {
 	asset := mapstr.M{
-		"cloud.provider": "aws",
-		"cloud.region":   region,
+		"cloud.provider":   "aws",
+		"cloud.region":     region,
+		"cloud.account.id": account,
 
 		"asset.type": assetType,
 		"asset.id":   assetId,
