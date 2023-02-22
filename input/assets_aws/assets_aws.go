@@ -326,20 +326,20 @@ func listEKSClusters(ctx context.Context, client *eks.Client) ([]string, error) 
 
 // parseTags converts different AWS SDK tag formats to a simple `map[string]string`
 func parseTags(tags interface{}) map[string]string {
-    if clusterTags, ok := tags.(map[string]string); ok {
-        // tags returned from eks.DescribeCluster
-        return clusterTags
-    } else if ec2Tags, ok := tags.([]types_ec2.Tag); ok {
-        // tags returned from ec2/vpc/subnets 
-        out := make(map[string]string)
-        for _, t := range ec2Tags {
-            out[*t.Key] = *t.Value
-        }
-        return out
-    } else {
-        // unsupported tag type
-        return nil
-    }
+	if clusterTags, ok := tags.(map[string]string); ok {
+		// tags returned from eks.DescribeCluster
+		return clusterTags
+	} else if ec2Tags, ok := tags.([]types_ec2.Tag); ok {
+		// tags returned from ec2/vpc/subnets
+		out := make(map[string]string)
+		for _, t := range ec2Tags {
+			out[*t.Key] = *t.Value
+		}
+		return out
+	} else {
+		// unsupported tag type
+		return nil
+	}
 }
 
 func publishAWSAsset(publisher stateless.Publisher, region, account, assetType, assetId string, parents, children []string, metadata mapstr.M) {
@@ -362,9 +362,9 @@ func publishAWSAsset(publisher stateless.Publisher, region, account, assetType, 
 	}
 
 	if metadata != nil {
-        if tags, ok := metadata["tags"]; ok {
-            metadata["tags"] = parseTags(tags)
-        }
+		if tags, ok := metadata["tags"]; ok {
+			metadata["tags"] = parseTags(tags)
+		}
 
 		asset["asset.metadata"] = metadata
 	}
