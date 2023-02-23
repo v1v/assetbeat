@@ -4,8 +4,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/magefile/mage/mg"
 	"github.com/magefile/mage/sh"
-    "github.com/magefile/mage/mg"
 	"os/exec"
 )
 
@@ -32,26 +32,26 @@ func Test() error {
 
 // Check runs static analysis and security checks
 func Check() error {
-    mg.Deps(staticcheck, gosec)
-    return nil
+	mg.Deps(staticcheck, gosec)
+	return nil
 }
 
 func staticcheck() error {
-    if installed := install("staticcheck", "honnef.co/go/tools/cmd/staticcheck@latest"); !installed {
-        return nil
-    }
+	if installed := install("staticcheck", "honnef.co/go/tools/cmd/staticcheck@latest"); !installed {
+		return nil
+	}
 
-    fmt.Println("Running staticcheck...")
-    return sh.RunV("staticcheck", "-f=stylish", "./...")
+	fmt.Println("Running staticcheck...")
+	return sh.RunV("staticcheck", "-f=stylish", "./...")
 }
 
 func gosec() error {
-    if installed := install("gosec", "github.com/securego/gosec/v2/cmd/gosec@latest"); !installed {
-        return nil
-    }
+	if installed := install("gosec", "github.com/securego/gosec/v2/cmd/gosec@latest"); !installed {
+		return nil
+	}
 
-    fmt.Println("Running gosec...")
-    return sh.RunV("gosec", "./...")
+	fmt.Println("Running gosec...")
+	return sh.RunV("gosec", "./...")
 }
 
 func install(packageName, installURL string) (isInstalled bool) {
