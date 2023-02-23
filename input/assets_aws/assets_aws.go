@@ -48,6 +48,7 @@ type EC2Instance struct {
 	InstanceID string
 	OwnerID    string
 	SubnetID   string
+	Tags       []types_ec2.Tag
 	Metadata   mapstr.M
 }
 
@@ -172,7 +173,17 @@ func collectEC2Assets(ctx context.Context, cfg aws.Config, log *logp.Logger, pub
 		if instance.SubnetID != "" {
 			parents = []string{instance.SubnetID}
 		}
-		publishAWSAsset(publisher, cfg.Region, instance.OwnerID, "aws.ec2.instance", instance.InstanceID, parents, nil, instance.Metadata)
+		publishAWSAsset(
+			publisher,
+			cfg.Region,
+			instance.OwnerID,
+			"aws.ec2.instance",
+			instance.InstanceID,
+			parents,
+			nil,
+			flattenEC2Tags(instance.Tags),
+			instance.Metadata,
+		)
 	}
 }
 
@@ -185,10 +196,18 @@ func collectVPCAssets(ctx context.Context, cfg aws.Config, log *logp.Logger, pub
 	}
 
 	for _, vpc := range vpcs {
-		publishAWSAsset(publisher, cfg.Region, *vpc.OwnerId, "aws.vpc", *vpc.VpcId, nil, nil, mapstr.M{
-			"tags":      vpc.Tags,
-			"isDefault": vpc.IsDefault,
-		})
+		publishAWSAsset(publisher,
+			cfg.Region,
+			*vpc.OwnerId,
+			"aws.vpc",
+			*vpc.VpcId,
+			nil,
+			nil,
+			flattenEC2Tags(vpc.Tags),
+			mapstr.M{
+				"isDefault": vpc.IsDefault,
+			},
+		)
 	}
 }
 
@@ -201,10 +220,19 @@ func collectSubnetAssets(ctx context.Context, cfg aws.Config, log *logp.Logger, 
 	}
 
 	for _, subnet := range subnets {
-		publishAWSAsset(publisher, cfg.Region, *subnet.OwnerId, "aws.subnet", *subnet.SubnetId, []string{*subnet.VpcId}, nil, mapstr.M{
-			"tags":  subnet.Tags,
-			"state": string(subnet.State),
-		})
+		publishAWSAsset(
+			publisher,
+			cfg.Region,
+			*subnet.OwnerId,
+			"aws.subnet",
+			*subnet.SubnetId,
+			[]string{*subnet.VpcId},
+			nil,
+			flattenEC2Tags(subnet.Tags),
+			mapstr.M{
+				"state": string(subnet.State),
+			},
+		)
 	}
 }
 
@@ -224,10 +252,19 @@ func collectEKSAssets(ctx context.Context, cfg aws.Config, log *logp.Logger, pub
 			}
 
 			clusterARN, _ := arn.Parse(*clusterDetail.Arn)
-			publishAWSAsset(publisher, cfg.Region, clusterARN.AccountID, "k8s.cluster", *clusterDetail.Arn, parents, nil, mapstr.M{
-				"tags":   clusterDetail.Tags,
-				"status": clusterDetail.Status,
-			})
+			publishAWSAsset(
+				publisher,
+				cfg.Region,
+				clusterARN.AccountID,
+				"k8s.cluster",
+				*clusterDetail.Arn,
+				parents,
+				nil,
+				clusterDetail.Tags,
+				mapstr.M{
+					"status": clusterDetail.Status,
+				},
+			)
 		}
 	}
 }
@@ -296,8 +333,8 @@ func describeEC2Instances(ctx context.Context, client *ec2.Client) ([]EC2Instanc
 				inst := EC2Instance{
 					InstanceID: *i.InstanceId,
 					OwnerID:    *reservation.OwnerId,
+					Tags:       i.Tags,
 					Metadata: mapstr.M{
-						"tags":  i.Tags,
 						"state": string(i.State.Name),
 					},
 				}
@@ -324,7 +361,16 @@ func listEKSClusters(ctx context.Context, client *eks.Client) ([]string, error) 
 	return clusters, nil
 }
 
-func publishAWSAsset(publisher stateless.Publisher, region, account, assetType, assetId string, parents, children []string, metadata mapstr.M) {
+// flattenEC2Tags converts the EC2 tag format to a simple `map[string]string`
+func flattenEC2Tags(tags []types_ec2.Tag) map[string]string {
+	out := make(map[string]string)
+	for _, t := range tags {
+		out[*t.Key] = *t.Value
+	}
+	return out
+}
+
+func publishAWSAsset(publisher stateless.Publisher, region, account, assetType, assetId string, parents, children []string, tags map[string]string, metadata mapstr.M) {
 	asset := mapstr.M{
 		"cloud.provider":   "aws",
 		"cloud.region":     region,
@@ -343,8 +389,13 @@ func publishAWSAsset(publisher stateless.Publisher, region, account, assetType, 
 		asset["asset.children"] = children
 	}
 
-	if metadata != nil {
-		asset["asset.metadata"] = metadata
+	assetMetadata := mapstr.M{}
+	if tags != nil {
+		assetMetadata["tags"] = tags
+	}
+	assetMetadata.Update(metadata)
+	if len(assetMetadata) != 0 {
+		asset["asset.metadata"] = assetMetadata
 	}
 
 	publisher.Publish(beat.Event{Fields: asset})
