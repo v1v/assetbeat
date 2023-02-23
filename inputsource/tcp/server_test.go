@@ -28,6 +28,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+    "github.com/dustin/go-humanize"
 
 	"github.com/elastic/inputrunner/inputsource"
 	"github.com/elastic/inputrunner/inputsource/common/streaming"

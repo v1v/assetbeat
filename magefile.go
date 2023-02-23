@@ -26,7 +26,7 @@ func Build() error {
 // Test runs all unit tests and writes an HTML coverage report to the build directory
 func Test() error {
 	err := sh.RunV("go", "test", "./...", "-coverprofile=coverage.out")
-	sh.RunV("go", "tool", "cover", "-html=coverage.out", "-o", "build/coverage.html")
+	sh.RunV("go", "tool", "cover", "-html=coverage.out", "-o", "coverage.html")
 	return err
 }
 
