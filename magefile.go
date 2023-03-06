@@ -5,7 +5,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -38,6 +37,11 @@ func Build() error {
 
 // Check runs static analysis and security checks
 func Check() error {
+	err := installTools()
+	if err != nil {
+		return err
+	}
+
 	mg.Deps(staticcheck, gosec)
 	return nil
 }
@@ -102,34 +106,30 @@ func isCoveragePercentageIsAboveThreshold(coverageFile string, thresholdPercent 
 	return int(coverage) >= thresholdPercent, nil
 }
 
-func staticcheck() error {
-	if installed := install("staticcheck", "honnef.co/go/tools/cmd/staticcheck@latest"); !installed {
-		return nil
+func installTools() error {
+	oldPath, _ := os.Getwd()
+	toolsPath := oldPath + "/internal/tools"
+	os.Chdir(toolsPath)
+	defer os.Chdir(oldPath)
+
+	if err := sh.RunV("go", "mod", "download"); err != nil {
+		return err
 	}
 
+	tools, err := sh.Output("go", "list", "-f", "{{range .Imports}}{{.}} {{end}}", "tools.go")
+	if err != nil {
+		return err
+	}
+
+	return sh.RunWithV(map[string]string{"GOBIN": oldPath + "/.tools"}, "go", append([]string{"install"}, strings.Fields(tools)...)...)
+}
+
+func staticcheck() error {
 	fmt.Println("Running staticcheck...")
-	return sh.RunV("staticcheck", "-f=stylish", "./...")
+	return sh.RunV("./.tools/staticcheck", "-f=stylish", "./...")
 }
 
 func gosec() error {
-	if installed := install("gosec", "github.com/securego/gosec/v2/cmd/gosec@latest"); !installed {
-		return nil
-	}
-
 	fmt.Println("Running gosec...")
-	return sh.RunV("gosec", "./...")
-}
-
-func install(packageName, installURL string) (isInstalled bool) {
-	_, missing := exec.LookPath(packageName)
-	if missing != nil {
-		fmt.Printf("installing %v...\n", packageName)
-		err := sh.RunV("go", "install", installURL)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Could not install %v, skipping...\n", packageName)
-			return false
-		}
-		fmt.Printf("%v installed...\n", packageName)
-	}
-	return true
+	return sh.RunV("./.tools/gosec", "./...")
 }
