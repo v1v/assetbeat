@@ -20,6 +20,7 @@ package aws
 import (
 	"context"
 
+	"github.com/elastic/inputrunner/input/assets/internal"
 	stateless "github.com/elastic/inputrunner/input/v2/input-stateless"
 	"github.com/elastic/inputrunner/util"
 
@@ -52,16 +53,14 @@ func collectEC2Assets(ctx context.Context, cfg aws.Config, log *logp.Logger, pub
 		if instance.SubnetID != "" {
 			parents = []string{instance.SubnetID}
 		}
-		publishAWSAsset(
-			publisher,
-			cfg.Region,
-			instance.OwnerID,
-			"aws.ec2.instance",
-			instance.InstanceID,
-			parents,
-			nil,
-			flattenEC2Tags(instance.Tags),
-			instance.Metadata,
+		internal.Publish(publisher,
+			internal.WithAssetCloudProvider("aws"),
+			internal.WithAssetRegion(cfg.Region),
+			internal.WithAssetAccountID(instance.OwnerID),
+			internal.WithAssetTypeAndID("aws.ec2.instance", instance.InstanceID),
+			internal.WithAssetParents(parents),
+			WithAssetTags(flattenEC2Tags(instance.Tags)),
+			internal.WithAssetMetadata(instance.Metadata),
 		)
 	}
 }

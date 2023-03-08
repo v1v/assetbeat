@@ -20,6 +20,7 @@ package aws
 import (
 	"context"
 
+	"github.com/elastic/inputrunner/input/assets/internal"
 	stateless "github.com/elastic/inputrunner/input/v2/input-stateless"
 
 	"github.com/elastic/elastic-agent-libs/logp"
@@ -39,17 +40,15 @@ func collectVPCAssets(ctx context.Context, cfg aws.Config, log *logp.Logger, pub
 	}
 
 	for _, vpc := range vpcs {
-		publishAWSAsset(publisher,
-			cfg.Region,
-			*vpc.OwnerId,
-			"aws.vpc",
-			*vpc.VpcId,
-			nil,
-			nil,
-			flattenEC2Tags(vpc.Tags),
-			mapstr.M{
+		internal.Publish(publisher,
+			internal.WithAssetCloudProvider("aws"),
+			internal.WithAssetRegion(cfg.Region),
+			internal.WithAssetAccountID(*vpc.OwnerId),
+			internal.WithAssetTypeAndID("aws.vpc", *vpc.VpcId),
+			WithAssetTags(flattenEC2Tags(vpc.Tags)),
+			internal.WithAssetMetadata(mapstr.M{
 				"isDefault": vpc.IsDefault,
-			},
+			}),
 		)
 	}
 }
@@ -63,18 +62,15 @@ func collectSubnetAssets(ctx context.Context, cfg aws.Config, log *logp.Logger, 
 	}
 
 	for _, subnet := range subnets {
-		publishAWSAsset(
-			publisher,
-			cfg.Region,
-			*subnet.OwnerId,
-			"aws.subnet",
-			*subnet.SubnetId,
-			[]string{*subnet.VpcId},
-			nil,
-			flattenEC2Tags(subnet.Tags),
-			mapstr.M{
+		internal.Publish(publisher,
+			internal.WithAssetRegion(cfg.Region),
+			internal.WithAssetAccountID(*subnet.OwnerId),
+			internal.WithAssetTypeAndID("aws.subnet", *subnet.SubnetId),
+			internal.WithAssetParents([]string{*subnet.VpcId}),
+			WithAssetTags(flattenEC2Tags(subnet.Tags)),
+			internal.WithAssetMetadata(mapstr.M{
 				"state": string(subnet.State),
-			},
+			}),
 		)
 	}
 }

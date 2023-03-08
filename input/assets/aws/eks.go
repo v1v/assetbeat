@@ -21,6 +21,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/elastic/inputrunner/input/assets/internal"
 	stateless "github.com/elastic/inputrunner/input/v2/input-stateless"
 
 	"github.com/elastic/elastic-agent-libs/logp"
@@ -48,18 +49,16 @@ func collectEKSAssets(ctx context.Context, cfg aws.Config, log *logp.Logger, pub
 			}
 
 			clusterARN, _ := arn.Parse(*clusterDetail.Arn)
-			publishAWSAsset(
-				publisher,
-				cfg.Region,
-				clusterARN.AccountID,
-				"k8s.cluster",
-				*clusterDetail.Arn,
-				parents,
-				nil,
-				clusterDetail.Tags,
-				mapstr.M{
+			internal.Publish(publisher,
+				internal.WithAssetCloudProvider("aws"),
+				internal.WithAssetRegion(cfg.Region),
+				internal.WithAssetAccountID(clusterARN.AccountID),
+				internal.WithAssetTypeAndID("k8s.cluster", *clusterDetail.Arn),
+				internal.WithAssetParents(parents),
+				WithAssetTags(clusterDetail.Tags),
+				internal.WithAssetMetadata(mapstr.M{
 					"status": clusterDetail.Status,
-				},
+				}),
 			)
 		}
 	}
