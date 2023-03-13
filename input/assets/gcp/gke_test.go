@@ -27,21 +27,21 @@ import (
 
 	"github.com/elastic/elastic-agent-libs/mapstr"
 	"github.com/stretchr/testify/assert"
-	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/container/v1"
 	"google.golang.org/api/option"
 )
 
-var findComputeProjectRe = regexp.MustCompile("/projects/([a-z_]+)/aggregated/instances")
+var findGKEProjectRe = regexp.MustCompile("/projects/([a-z_]+)/zones/-/clusters")
 
-func TestGetAllComputeInstances(t *testing.T) {
+func TestGetAllGKEClusters(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 
 		ctx           context.Context
 		cfg           config
-		httpResponses map[string]compute.InstanceAggregatedList
+		httpResponses map[string]container.ListClustersResponse
 
-		expectedInstances []computeInstance
+		expectedClusters []containerCluster
 	}{
 		{
 			name: "with no project specified",
@@ -57,33 +57,25 @@ func TestGetAllComputeInstances(t *testing.T) {
 				Projects: []string{"my_project"},
 			},
 
-			httpResponses: map[string]compute.InstanceAggregatedList{
-				"my_project": compute.InstanceAggregatedList{
-					Items: map[string]compute.InstancesScopedList{
-						"europe-central2-a": compute.InstancesScopedList{
-							Instances: []*compute.Instance{
-								&compute.Instance{
-									Id:   1,
-									Zone: "https://www.googleapis.com/compute/v1/projects/my_project/zones/europe-west1-d",
-									NetworkInterfaces: []*compute.NetworkInterface{
-										&compute.NetworkInterface{
-											Network: "https://www.googleapis.com/compute/v1/projects/my_project/global/networks/my_network",
-										},
-									},
-									Status: "RUNNING",
-								},
-							},
+			httpResponses: map[string]container.ListClustersResponse{
+				"my_project": container.ListClustersResponse{
+					Clusters: []*container.Cluster{
+						&container.Cluster{
+							Id:      "1",
+							Zone:    "https://www.googleapis.com/compute/v1/projects/my_project/zones/europe-west1-d",
+							Network: "my_network",
+							Status:  "RUNNING",
 						},
 					},
 				},
 			},
 
-			expectedInstances: []computeInstance{
-				computeInstance{
+			expectedClusters: []containerCluster{
+				containerCluster{
 					ID:      "1",
 					Region:  "europe-west1",
 					Account: "my_project",
-					VPCs:    []string{"my_network"},
+					VPC:     "my_network",
 					Metadata: mapstr.M{
 						"state": "RUNNING",
 					},
@@ -98,48 +90,43 @@ func TestGetAllComputeInstances(t *testing.T) {
 				Projects: []string{"my_project", "my_second_project"},
 			},
 
-			httpResponses: map[string]compute.InstanceAggregatedList{
-				"my_project": compute.InstanceAggregatedList{
-					Items: map[string]compute.InstancesScopedList{
-						"europe-central2-a": compute.InstancesScopedList{
-							Instances: []*compute.Instance{
-								&compute.Instance{
-									Id:     1,
-									Zone:   "https://www.googleapis.com/compute/v1/projects/my_project/zones/europe-west1-d",
-									Status: "PROVISIONING",
-								},
-							},
+			httpResponses: map[string]container.ListClustersResponse{
+				"my_project": container.ListClustersResponse{
+					Clusters: []*container.Cluster{
+						&container.Cluster{
+							Id:      "1",
+							Zone:    "https://www.googleapis.com/compute/v1/projects/my_project/zones/europe-west1-d",
+							Network: "my_network",
+							Status:  "RUNNING",
 						},
 					},
 				},
-				"my_second_project": compute.InstanceAggregatedList{
-					Items: map[string]compute.InstancesScopedList{
-						"europe-central2-a": compute.InstancesScopedList{
-							Instances: []*compute.Instance{
-								&compute.Instance{
-									Id:     42,
-									Zone:   "https://www.googleapis.com/compute/v1/projects/my_project/zones/europe-west1-d",
-									Status: "STOPPED",
-								},
-							},
+				"my_second_project": container.ListClustersResponse{
+					Clusters: []*container.Cluster{
+						&container.Cluster{
+							Id:     "42",
+							Zone:   "https://www.googleapis.com/compute/v1/projects/my_project/zones/us-central-1c",
+							Status: "STOPPED",
 						},
 					},
 				},
 			},
 
-			expectedInstances: []computeInstance{
-				computeInstance{
+			expectedClusters: []containerCluster{
+				containerCluster{
 					ID:      "1",
 					Region:  "europe-west1",
 					Account: "my_project",
+					VPC:     "my_network",
 					Metadata: mapstr.M{
-						"state": "PROVISIONING",
+						"state": "RUNNING",
 					},
 				},
-				computeInstance{
+				containerCluster{
 					ID:      "42",
-					Region:  "europe-west1",
+					Region:  "us-central",
 					Account: "my_second_project",
+					VPC:     "",
 					Metadata: mapstr.M{
 						"state": "STOPPED",
 					},
@@ -149,7 +136,7 @@ func TestGetAllComputeInstances(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				m := findComputeProjectRe.FindStringSubmatch(r.URL.Path)
+				m := findGKEProjectRe.FindStringSubmatch(r.URL.Path)
 				if len(m) < 2 {
 					w.WriteHeader(http.StatusNotFound)
 					return
@@ -163,12 +150,12 @@ func TestGetAllComputeInstances(t *testing.T) {
 			}))
 			defer ts.Close()
 
-			svc, err := compute.NewService(tt.ctx, option.WithoutAuthentication(), option.WithEndpoint(ts.URL))
+			svc, err := container.NewService(tt.ctx, option.WithoutAuthentication(), option.WithEndpoint(ts.URL))
 			assert.NoError(t, err)
 
-			instances, err := getAllComputeInstances(tt.ctx, tt.cfg, svc)
+			clusters, err := getAllGKEClusters(tt.ctx, tt.cfg, svc)
 			assert.NoError(t, err)
-			assert.Equal(t, tt.expectedInstances, instances)
+			assert.Equal(t, tt.expectedClusters, clusters)
 		})
 	}
 }

@@ -20,7 +20,6 @@ package gcp
 import (
 	"context"
 	"strconv"
-	"strings"
 
 	"github.com/elastic/elastic-agent-libs/mapstr"
 	"github.com/elastic/inputrunner/input/assets/internal"
@@ -32,7 +31,7 @@ type computeInstance struct {
 	ID       string
 	Region   string
 	Account  string
-	Networks []string
+	VPCs     []string
 	Labels   map[string]string
 	Metadata mapstr.M
 }
@@ -50,7 +49,7 @@ func collectComputeAssets(ctx context.Context, cfg config, publisher stateless.P
 
 	for _, instance := range instances {
 		var parents []string
-		parents = append(parents, instance.Networks...)
+		parents = append(parents, instance.VPCs...)
 
 		internal.Publish(publisher,
 			internal.WithAssetCloudProvider("gcp"),
@@ -75,17 +74,17 @@ func getAllComputeInstances(ctx context.Context, cfg config, svc *compute.Servic
 		err := req.Pages(ctx, func(page *compute.InstanceAggregatedList) error {
 			for _, isl := range page.Items {
 				for _, i := range isl.Instances {
-					var networks []string
+					var vpcs []string
 					for _, ni := range i.NetworkInterfaces {
-						networks = append(networks, getResourceNameFromURL(ni.Network))
+						vpcs = append(vpcs, getResourceNameFromURL(ni.Network))
 					}
 
 					instances = append(instances, computeInstance{
-						ID:       strconv.FormatUint(i.Id, 10),
-						Region:   getRegionFromZoneURL(i.Zone),
-						Account:  p,
-						Networks: networks,
-						Labels:   i.Labels,
+						ID:      strconv.FormatUint(i.Id, 10),
+						Region:  getRegionFromZoneURL(i.Zone),
+						Account: p,
+						VPCs:    vpcs,
+						Labels:  i.Labels,
 						Metadata: mapstr.M{
 							"state": string(i.Status),
 						},
@@ -101,15 +100,4 @@ func getAllComputeInstances(ctx context.Context, cfg config, svc *compute.Servic
 	}
 
 	return instances, nil
-}
-
-func getResourceNameFromURL(res string) string {
-	s := strings.Split(res, "/")
-	return s[len(s)-1]
-}
-
-func getRegionFromZoneURL(zone string) string {
-	z := getResourceNameFromURL(zone)
-	r := strings.Split(z, "-")
-	return strings.Join(r[:len(r)-1], "-")
 }
