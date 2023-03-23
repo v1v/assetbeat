@@ -23,6 +23,7 @@ import (
 	"github.com/elastic/inputrunner/beater"
 	"github.com/elastic/inputrunner/input/assets/aws"
 	"github.com/elastic/inputrunner/input/assets/gcp"
+	"github.com/elastic/inputrunner/input/assets/k8s"
 	"github.com/elastic/inputrunner/input/exec"
 	"github.com/elastic/inputrunner/input/udp"
 	"github.com/elastic/inputrunner/input/unix"
@@ -36,6 +37,7 @@ func Init(info beat.Info, log *logp.Logger, components beater.StateStore) []v2.P
 func genericInputs(log *logp.Logger, components beater.StateStore) []v2.Plugin {
 	return []v2.Plugin{
 		aws.Plugin(),
+		k8s.Plugin(),
 		gcp.Plugin(),
 		exec.Plugin(),
 		udp.Plugin(),
