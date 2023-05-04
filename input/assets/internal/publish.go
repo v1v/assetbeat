@@ -20,10 +20,11 @@ package internal
 import (
 	"fmt"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	stateless "github.com/elastic/beats/v7/filebeat/input/v2/input-stateless"
 	"github.com/elastic/beats/v7/libbeat/beat"
 	"github.com/elastic/elastic-agent-libs/mapstr"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type AssetOption func(beat.Event) beat.Event
@@ -106,6 +107,17 @@ func WithPodData(name, uid, namespace string, startTime *metav1.Time) AssetOptio
 		e.Fields["kubernetes.pod.name"] = name
 		e.Fields["kubernetes.pod.uid"] = uid
 		e.Fields["kubernetes.pod.start_time"] = startTime
+		e.Fields["kubernetes.namespace"] = namespace
+		return e
+	}
+}
+
+func WithContainerData(name, uid, namespace, state string, startTime *metav1.Time) AssetOption {
+	return func(e beat.Event) beat.Event {
+		e.Fields["kubernetes.container.name"] = name
+		e.Fields["kubernetes.container.uid"] = uid
+		e.Fields["kubernetes.container.start_time"] = startTime
+		e.Fields["kubernetes.container.state"] = state
 		e.Fields["kubernetes.namespace"] = namespace
 		return e
 	}
