@@ -18,15 +18,21 @@
 package gcp
 
 import (
+	container "cloud.google.com/go/container/apiv1"
+	"cloud.google.com/go/container/apiv1/containerpb"
 	"context"
 	"fmt"
+	"github.com/googleapis/gax-go/v2"
 	"strings"
 
 	stateless "github.com/elastic/beats/v7/filebeat/input/v2/input-stateless"
 	"github.com/elastic/elastic-agent-libs/mapstr"
 	"github.com/elastic/inputrunner/input/assets/internal"
-	"google.golang.org/api/container/v1"
 )
+
+type listClustersAPIClient interface {
+	ListClusters(ctx context.Context, req *containerpb.ListClustersRequest, opts ...gax.CallOption) (*containerpb.ListClustersResponse, error)
+}
 
 type containerCluster struct {
 	ID       string
@@ -38,12 +44,13 @@ type containerCluster struct {
 }
 
 func collectGKEAssets(ctx context.Context, cfg config, publisher stateless.Publisher) error {
-	svc, err := container.NewService(ctx, buildClientOptions(cfg)...)
+	client, err := container.NewClusterManagerClient(ctx)
 	if err != nil {
 		return err
 	}
+	defer client.Close()
 
-	clusters, err := getAllGKEClusters(ctx, cfg, svc)
+	clusters, err := getAllGKEClusters(ctx, cfg, client)
 	if err != nil {
 		return err
 	}
@@ -71,7 +78,7 @@ func collectGKEAssets(ctx context.Context, cfg config, publisher stateless.Publi
 	return nil
 }
 
-func getAllGKEClusters(ctx context.Context, cfg config, svc *container.Service) ([]containerCluster, error) {
+func getAllGKEClusters(ctx context.Context, cfg config, client listClustersAPIClient) ([]containerCluster, error) {
 	var clusters []containerCluster
 
 	var zones = "-"
@@ -80,20 +87,26 @@ func getAllGKEClusters(ctx context.Context, cfg config, svc *container.Service) 
 	}
 
 	for _, p := range cfg.Projects {
-		list, err := svc.Projects.Zones.Clusters.List(p, zones).Do()
+		req := &containerpb.ListClustersRequest{Parent: fmt.Sprintf("projects/%s/locations/%s", p, zones)}
+		list, err := client.ListClusters(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+
 		if err != nil {
 			return nil, fmt.Errorf("error retrieving clusters list for project %s: %w", p, err)
 		}
 
 		for _, c := range list.Clusters {
+
 			clusters = append(clusters, containerCluster{
 				ID:      c.Id,
-				Region:  getRegionFromZoneURL(c.Zone),
+				Region:  c.Location,
 				Account: p,
 				VPC:     c.Network,
 				Labels:  c.ResourceLabels,
 				Metadata: mapstr.M{
-					"state": c.Status,
+					"state": c.Status.String(),
 				},
 			})
 		}

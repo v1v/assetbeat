@@ -19,6 +19,7 @@ package gcp
 
 import (
 	"context"
+	"google.golang.org/api/option"
 	"time"
 
 	input "github.com/elastic/beats/v7/filebeat/input/v2"
@@ -29,7 +30,6 @@ import (
 	"github.com/elastic/beats/v7/libbeat/feature"
 	conf "github.com/elastic/elastic-agent-libs/config"
 	"github.com/elastic/elastic-agent-libs/logp"
-	"google.golang.org/api/option"
 )
 
 func Plugin() input.Plugin {
@@ -114,13 +114,13 @@ func (s *assetsGCP) collectAll(ctx context.Context, log *logp.Logger, publisher 
 	go func() {
 		err := collectComputeAssets(ctx, s.config, publisher)
 		if err != nil {
-			log.Errorf("error collecting compute assets: %w", err)
+			log.Errorf("error collecting compute assets: %+v", err)
 		}
 	}()
 	go func() {
 		err := collectGKEAssets(ctx, s.config, publisher)
 		if err != nil {
-			log.Errorf("error collecting GKE assets: %w", err)
+			log.Errorf("error collecting GKE assets: %+v", err)
 		}
 	}()
 

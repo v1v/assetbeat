@@ -18,29 +18,57 @@
 package gcp
 
 import (
+	compute "cloud.google.com/go/compute/apiv1"
+	"cloud.google.com/go/compute/apiv1/computepb"
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"regexp"
+	"github.com/gogo/protobuf/proto"
+	"github.com/googleapis/gax-go/v2"
+	"google.golang.org/api/iterator"
 	"testing"
 
 	"github.com/elastic/elastic-agent-libs/mapstr"
 	"github.com/stretchr/testify/assert"
-	"google.golang.org/api/compute/v1"
-	"google.golang.org/api/option"
 )
 
-var findComputeProjectRe = regexp.MustCompile("/projects/([a-z_]+)/aggregated/instances")
+type StubAggregatedInstanceListIterator struct {
+	iterCounter               int
+	ReturnScopedInstancesList []compute.InstancesScopedListPair
+	ReturnInstancesError      error
+}
+
+func (it *StubAggregatedInstanceListIterator) Next() (compute.InstancesScopedListPair, error) {
+
+	if it.ReturnInstancesError != nil {
+		return compute.InstancesScopedListPair{}, it.ReturnInstancesError
+	}
+
+	if it.iterCounter == len(it.ReturnScopedInstancesList) {
+		return compute.InstancesScopedListPair{}, iterator.Done
+	}
+
+	instances := it.ReturnScopedInstancesList[it.iterCounter]
+	it.iterCounter++
+
+	return instances, nil
+
+}
+
+type InstancesClientStub struct {
+	AggregatedInstanceListIterator map[string]*StubAggregatedInstanceListIterator
+}
+
+func (s *InstancesClientStub) AggregatedList(ctx context.Context, req *computepb.AggregatedListInstancesRequest, opts ...gax.CallOption) AggregatedInstanceIterator {
+	project := req.Project
+	return s.AggregatedInstanceListIterator[project]
+}
 
 func TestGetAllComputeInstances(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 
-		ctx           context.Context
-		cfg           config
-		httpResponses map[string]compute.InstanceAggregatedList
-
+		ctx               context.Context
+		cfg               config
+		instances         map[string]*StubAggregatedInstanceListIterator
 		expectedInstances []computeInstance
 	}{
 		{
@@ -57,29 +85,30 @@ func TestGetAllComputeInstances(t *testing.T) {
 				Projects: []string{"my_project"},
 			},
 
-			httpResponses: map[string]compute.InstanceAggregatedList{
-				"my_project": compute.InstanceAggregatedList{
-					Items: map[string]compute.InstancesScopedList{
-						"europe-central2-a": compute.InstancesScopedList{
-							Instances: []*compute.Instance{
-								&compute.Instance{
-									Id:   1,
-									Zone: "https://www.googleapis.com/compute/v1/projects/my_project/zones/europe-west1-d",
-									NetworkInterfaces: []*compute.NetworkInterface{
-										&compute.NetworkInterface{
-											Network: "https://www.googleapis.com/compute/v1/projects/my_project/global/networks/my_network",
+			instances: map[string]*StubAggregatedInstanceListIterator{
+				"my_project": {
+					ReturnScopedInstancesList: []compute.InstancesScopedListPair{{
+						Key: "europe-west-1",
+						Value: &computepb.InstancesScopedList{
+							Instances: []*computepb.Instance{
+								{
+									Id:   proto.Uint64(1),
+									Zone: proto.String("https://www.googleapis.com/compute/v1/projects/my_project/zones/europe-west1-d"),
+									NetworkInterfaces: []*computepb.NetworkInterface{
+										{
+											Network: proto.String("https://www.googleapis.com/compute/v1/projects/my_project/global/networks/my_network"),
 										},
 									},
-									Status: "RUNNING",
-								},
+									Status: proto.String("RUNNING")},
 							},
 						},
+					},
 					},
 				},
 			},
 
 			expectedInstances: []computeInstance{
-				computeInstance{
+				{
 					ID:      "1",
 					Region:  "europe-west1",
 					Account: "my_project",
@@ -98,37 +127,39 @@ func TestGetAllComputeInstances(t *testing.T) {
 				Projects: []string{"my_project", "my_second_project"},
 			},
 
-			httpResponses: map[string]compute.InstanceAggregatedList{
-				"my_project": compute.InstanceAggregatedList{
-					Items: map[string]compute.InstancesScopedList{
-						"europe-central2-a": compute.InstancesScopedList{
-							Instances: []*compute.Instance{
-								&compute.Instance{
-									Id:     1,
-									Zone:   "https://www.googleapis.com/compute/v1/projects/my_project/zones/europe-west1-d",
-									Status: "PROVISIONING",
-								},
+			instances: map[string]*StubAggregatedInstanceListIterator{
+				"my_project": {
+					ReturnScopedInstancesList: []compute.InstancesScopedListPair{{
+						Key: "europe-west-1",
+						Value: &computepb.InstancesScopedList{
+							Instances: []*computepb.Instance{
+								{
+									Id:     proto.Uint64(1),
+									Zone:   proto.String("https://www.googleapis.com/compute/v1/projects/my_project/zones/europe-west1-d"),
+									Status: proto.String("PROVISIONING")},
 							},
 						},
 					},
+					},
 				},
-				"my_second_project": compute.InstanceAggregatedList{
-					Items: map[string]compute.InstancesScopedList{
-						"europe-central2-a": compute.InstancesScopedList{
-							Instances: []*compute.Instance{
-								&compute.Instance{
-									Id:     42,
-									Zone:   "https://www.googleapis.com/compute/v1/projects/my_project/zones/europe-west1-d",
-									Status: "STOPPED",
-								},
+				"my_second_project": {
+					ReturnScopedInstancesList: []compute.InstancesScopedListPair{{
+						Key: "europe-west-1",
+						Value: &computepb.InstancesScopedList{
+							Instances: []*computepb.Instance{
+								{
+									Id:     proto.Uint64(42),
+									Zone:   proto.String("https://www.googleapis.com/compute/v1/projects/my_project/zones/europe-west1-d"),
+									Status: proto.String("STOPPED")},
 							},
 						},
+					},
 					},
 				},
 			},
 
 			expectedInstances: []computeInstance{
-				computeInstance{
+				{
 					ID:      "1",
 					Region:  "europe-west1",
 					Account: "my_project",
@@ -136,7 +167,7 @@ func TestGetAllComputeInstances(t *testing.T) {
 						"state": "PROVISIONING",
 					},
 				},
-				computeInstance{
+				{
 					ID:      "42",
 					Region:  "europe-west1",
 					Account: "my_second_project",
@@ -155,34 +186,33 @@ func TestGetAllComputeInstances(t *testing.T) {
 				Regions:  []string{"us-west1"},
 			},
 
-			httpResponses: map[string]compute.InstanceAggregatedList{
-				"my_project": compute.InstanceAggregatedList{
-					Items: map[string]compute.InstancesScopedList{
-						"europe-central2-a": compute.InstancesScopedList{
-							Instances: []*compute.Instance{
-								&compute.Instance{
-									Id:   1,
-									Zone: "https://www.googleapis.com/compute/v1/projects/my_project/zones/europe-west1-d",
-									NetworkInterfaces: []*compute.NetworkInterface{
-										&compute.NetworkInterface{
-											Network: "https://www.googleapis.com/compute/v1/projects/my_project/global/networks/my_network",
+			instances: map[string]*StubAggregatedInstanceListIterator{
+				"my_project": {
+					ReturnScopedInstancesList: []compute.InstancesScopedListPair{
+						{
+							Key: "europe-west-1",
+							Value: &computepb.InstancesScopedList{
+								Instances: []*computepb.Instance{
+									{
+										Id:   proto.Uint64(1),
+										Zone: proto.String("https://www.googleapis.com/compute/v1/projects/my_project/zones/europe-west1-d"),
+										NetworkInterfaces: []*computepb.NetworkInterface{
+											{
+												Network: proto.String("https://www.googleapis.com/compute/v1/projects/my_project/global/networks/my_network"),
+											},
 										},
-									},
-									Status: "RUNNING",
+										Status: proto.String("RUNNING")},
 								},
 							},
 						},
-						"us-west1-b": compute.InstancesScopedList{
-							Instances: []*compute.Instance{
-								&compute.Instance{
-									Id:   2,
-									Zone: "https://www.googleapis.com/compute/v1/projects/my_project/zones/us-west1-b",
-									NetworkInterfaces: []*compute.NetworkInterface{
-										&compute.NetworkInterface{
-											Network: "https://www.googleapis.com/compute/v1/projects/my_project/global/networks/my_network",
-										},
-									},
-									Status: "RUNNING",
+						{
+							Key: "us-west1-b",
+							Value: &computepb.InstancesScopedList{
+								Instances: []*computepb.Instance{
+									{
+										Id:     proto.Uint64(42),
+										Zone:   proto.String("https://www.googleapis.com/compute/v1/projects/my_project/zones/us-west1-b"),
+										Status: proto.String("RUNNING")},
 								},
 							},
 						},
@@ -191,11 +221,10 @@ func TestGetAllComputeInstances(t *testing.T) {
 			},
 
 			expectedInstances: []computeInstance{
-				computeInstance{
-					ID:      "2",
+				{
+					ID:      "42",
 					Region:  "us-west1",
 					Account: "my_project",
-					VPCs:    []string{"my_network"},
 					Metadata: mapstr.M{
 						"state": "RUNNING",
 					},
@@ -204,25 +233,13 @@ func TestGetAllComputeInstances(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				m := findComputeProjectRe.FindStringSubmatch(r.URL.Path)
-				if len(m) < 2 {
-					w.WriteHeader(http.StatusNotFound)
-					return
-				}
-				project := m[1]
-
-				b, err := json.Marshal(tt.httpResponses[project])
-				assert.NoError(t, err)
-				_, err = w.Write(b)
-				assert.NoError(t, err)
-			}))
-			defer ts.Close()
-
-			svc, err := compute.NewService(tt.ctx, option.WithoutAuthentication(), option.WithEndpoint(ts.URL))
-			assert.NoError(t, err)
-
-			instances, err := getAllComputeInstances(tt.ctx, tt.cfg, svc)
+			client := InstancesClientStub{AggregatedInstanceListIterator: tt.instances}
+			clientCreator := listInstanceAPIClient{
+				AggregatedList: func(ctx context.Context, req *computepb.AggregatedListInstancesRequest, opts ...gax.CallOption) AggregatedInstanceIterator {
+					return client.AggregatedList(ctx, req, opts...)
+				},
+			}
+			instances, err := getAllComputeInstances(tt.ctx, tt.cfg, clientCreator)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedInstances, instances)
 		})

@@ -3,6 +3,8 @@ module github.com/elastic/inputrunner
 go 1.19
 
 require (
+	cloud.google.com/go/compute v1.19.0
+	cloud.google.com/go/container v1.15.0
 	github.com/aws/aws-sdk-go-v2 v1.18.0
 	github.com/aws/aws-sdk-go-v2/config v1.18.25
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.24
@@ -16,6 +18,8 @@ require (
 	github.com/elastic/elastic-agent-libs v0.3.8
 	github.com/elastic/go-concert v0.2.0
 	github.com/gofrs/uuid v4.4.0+incompatible
+	github.com/gogo/protobuf v1.3.2
+	github.com/googleapis/gax-go/v2 v2.8.0
 	github.com/magefile/mage v1.15.0
 	github.com/mitchellh/hashstructure v1.1.0
 	github.com/pkg/errors v0.9.1
@@ -29,7 +33,7 @@ require (
 )
 
 require (
-	cloud.google.com/go/compute v1.19.0 // indirect
+	cloud.google.com/go v0.110.1 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/Shopify/sarama v1.38.1 // indirect
@@ -76,7 +80,6 @@ require (
 	github.com/go-openapi/swag v0.22.3 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.2+incompatible // indirect
 	github.com/gofrs/flock v0.8.1 // indirect
-	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
@@ -87,7 +90,6 @@ require (
 	github.com/google/s2a-go v0.1.3 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.2.3 // indirect
-	github.com/googleapis/gax-go/v2 v2.8.0 // indirect
 	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/h2non/filetype v1.1.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -146,7 +148,7 @@ require (
 	go.uber.org/goleak v1.2.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
-	golang.org/x/crypto v0.5.0 // indirect
+	golang.org/x/crypto v0.7.0 // indirect
 	golang.org/x/mod v0.9.0 // indirect
 	golang.org/x/oauth2 v0.7.0 // indirect
 	golang.org/x/sys v0.8.0 // indirect
