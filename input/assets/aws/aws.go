@@ -143,7 +143,7 @@ func collectAWSAssets(ctx context.Context, log *logp.Logger, cfg config, publish
 		}
 
 		// these strings need careful documentation
-		if internal.IsTypeEnabled(cfg.AssetTypes, "eks") {
+		if internal.IsTypeEnabled(cfg.AssetTypes, "k8s.cluster") {
 			go func() {
 				err := collectEKSAssets(ctx, awsCfg, indexNamespace, log, publisher)
 				if err != nil {
@@ -151,19 +151,18 @@ func collectAWSAssets(ctx context.Context, log *logp.Logger, cfg config, publish
 				}
 			}()
 		}
-		if internal.IsTypeEnabled(cfg.AssetTypes, "ec2") {
+		if internal.IsTypeEnabled(cfg.AssetTypes, "aws.ec2.instance") {
+			ec2Region := region
 			go func() {
 				client := ec2.NewFromConfig(awsCfg)
-				err := collectEC2Assets(ctx, client, region, indexNamespace, log, publisher)
+				err := collectEC2Assets(ctx, client, ec2Region, indexNamespace, log, publisher)
 				if err != nil {
 					log.Errorf("error collecting EC2 assets: %w", err)
 				}
 			}()
 		}
-		if internal.IsTypeEnabled(cfg.AssetTypes, "vpc") {
-			// should these just go in the same function??
+		if internal.IsTypeEnabled(cfg.AssetTypes, "aws.vpc") {
 			vpcRegion := region
-			subnetRegion := region
 			go func() {
 				client := ec2.NewFromConfig(awsCfg)
 				err := collectVPCAssets(ctx, client, vpcRegion, indexNamespace, log, publisher)
@@ -171,6 +170,9 @@ func collectAWSAssets(ctx context.Context, log *logp.Logger, cfg config, publish
 					log.Errorf("error collecting VPC assets: %w", err)
 				}
 			}()
+		}
+		if internal.IsTypeEnabled(cfg.AssetTypes, "aws.subnet") {
+			subnetRegion := region
 			go func() {
 				client := ec2.NewFromConfig(awsCfg)
 				err := collectSubnetAssets(ctx, client, subnetRegion, indexNamespace, log, publisher)
