@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	cloud.google.com/go/compute v1.19.3
-	cloud.google.com/go/container v1.18.1
+	cloud.google.com/go/container v1.20.0
 	github.com/aws/aws-sdk-go-v2 v1.18.0
 	github.com/aws/aws-sdk-go-v2/config v1.18.25
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.24
@@ -30,7 +30,6 @@ require (
 )
 
 require (
-	cloud.google.com/go v0.110.1 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/Shopify/sarama v1.38.1 // indirect
