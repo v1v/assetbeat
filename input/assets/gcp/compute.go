@@ -71,15 +71,15 @@ func collectComputeAssets(ctx context.Context, cfg config, publisher stateless.P
 		var parents []string
 		for _, vpc := range instance.VPCs {
 			//TODO: Amend asset_type, if required, once VPCs gets actually collected for GCP
-			parents = append(parents, "gcp.vpc:"+vpc)
+			parents = append(parents, "network:"+vpc)
 		}
 
 		internal.Publish(publisher,
 			internal.WithAssetCloudProvider("gcp"),
 			internal.WithAssetRegion(instance.Region),
 			internal.WithAssetAccountID(instance.Account),
-			internal.WithAssetTypeAndID(assetType, instance.ID),
-			internal.WithAssetKind(assetKind),
+			internal.WithAssetKindAndID(assetKind, instance.ID),
+			internal.WithAssetType(assetType),
 			internal.WithAssetParents(parents),
 			WithAssetLabels(internal.ToMapstr(instance.Labels)),
 			internal.WithIndex(assetType, indexNamespace),

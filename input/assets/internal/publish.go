@@ -60,18 +60,17 @@ func WithAssetAccountID(value string) AssetOption {
 	}
 }
 
-func WithAssetTypeAndID(t, id string) AssetOption {
+func WithAssetKindAndID(k, id string) AssetOption {
 	return func(e beat.Event) beat.Event {
-		e.Fields["asset.type"] = t
+		e.Fields["asset.kind"] = k
 		e.Fields["asset.id"] = id
-		e.Fields["asset.ean"] = fmt.Sprintf("%s:%s", t, id)
+		e.Fields["asset.ean"] = fmt.Sprintf("%s:%s", k, id)
 		return e
 	}
 }
-
-func WithAssetKind(value string) AssetOption {
+func WithAssetType(value string) AssetOption {
 	return func(e beat.Event) beat.Event {
-		e.Fields["asset.kind"] = value
+		e.Fields["asset.type"] = value
 		return e
 	}
 }
