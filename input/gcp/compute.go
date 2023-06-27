@@ -28,7 +28,9 @@ import (
 
 	"github.com/elastic/assetbeat/input/internal"
 	stateless "github.com/elastic/beats/v7/filebeat/input/v2/input-stateless"
+	"github.com/elastic/elastic-agent-libs/logp"
 	"github.com/elastic/elastic-agent-libs/mapstr"
+	"github.com/elastic/go-freelru"
 )
 
 type AggregatedInstanceIterator interface {
@@ -48,9 +50,9 @@ type computeInstance struct {
 	Metadata mapstr.M
 }
 
-func collectComputeAssets(ctx context.Context, cfg config, client listInstanceAPIClient, publisher stateless.Publisher) error {
+func collectComputeAssets(ctx context.Context, cfg config, vpcAssetCache *freelru.LRU[string, *vpc], client listInstanceAPIClient, publisher stateless.Publisher, log *logp.Logger) error {
 
-	instances, err := getAllComputeInstances(ctx, cfg, client)
+	instances, err := getAllComputeInstances(ctx, cfg, vpcAssetCache, client)
 	if err != nil {
 		return err
 	}
@@ -58,12 +60,15 @@ func collectComputeAssets(ctx context.Context, cfg config, client listInstanceAP
 	assetType := "gcp.compute.instance"
 	assetKind := "host"
 	indexNamespace := cfg.IndexNamespace
+	log.Debug("Publishing GCP compute instances")
+
 	for _, instance := range instances {
 		var parents []string
 		for _, vpc := range instance.VPCs {
-			parents = append(parents, "network:"+vpc)
+			if len(vpc) > 0 {
+				parents = append(parents, "network:"+vpc)
+			}
 		}
-
 		internal.Publish(publisher, nil,
 			internal.WithAssetCloudProvider("gcp"),
 			internal.WithAssetRegion(instance.Region),
@@ -80,7 +85,7 @@ func collectComputeAssets(ctx context.Context, cfg config, client listInstanceAP
 	return nil
 }
 
-func getAllComputeInstances(ctx context.Context, cfg config, client listInstanceAPIClient) ([]computeInstance, error) {
+func getAllComputeInstances(ctx context.Context, cfg config, vpcAssetCache *freelru.LRU[string, *vpc], client listInstanceAPIClient) ([]computeInstance, error) {
 	var instances []computeInstance
 
 	for _, p := range cfg.Projects {
@@ -97,16 +102,17 @@ func getAllComputeInstances(ctx context.Context, cfg config, client listInstance
 			if err != nil {
 				return nil, err
 			}
-			for _, i := range instanceScopedPair.Value.Instances {
-				if wantInstance(cfg, i) {
+			zone := instanceScopedPair.Key
+			if wantZone(zone, cfg.Regions) {
+				for _, i := range instanceScopedPair.Value.Instances {
 					var vpcs []string
 					for _, ni := range i.NetworkInterfaces {
-						vpcs = append(vpcs, getResourceNameFromURL(*ni.Network))
+						vpcs = append(vpcs, getVpcIdFromLink(*ni.Network, vpcAssetCache))
 					}
 
 					instances = append(instances, computeInstance{
 						ID:      strconv.FormatUint(*i.Id, 10),
-						Region:  getRegionFromZoneURL(*i.Zone),
+						Region:  getRegionFromZoneURL(zone),
 						Account: p,
 						VPCs:    vpcs,
 						Labels:  i.Labels,
@@ -116,23 +122,9 @@ func getAllComputeInstances(ctx context.Context, cfg config, client listInstance
 					})
 				}
 			}
+
 		}
 	}
 
 	return instances, nil
-}
-
-func wantInstance(cfg config, i *computepb.Instance) bool {
-	if len(cfg.Regions) == 0 {
-		return true
-	}
-
-	region := getRegionFromZoneURL(*i.Zone)
-	for _, z := range cfg.Regions {
-		if z == region {
-			return true
-		}
-	}
-
-	return false
 }

@@ -32,6 +32,7 @@ import (
 	stateless "github.com/elastic/beats/v7/filebeat/input/v2/input-stateless"
 	"github.com/elastic/elastic-agent-libs/logp"
 	"github.com/elastic/elastic-agent-libs/mapstr"
+	"github.com/elastic/go-freelru"
 )
 
 type listClustersAPIClient interface {
@@ -48,9 +49,9 @@ type containerCluster struct {
 	Metadata  mapstr.M
 }
 
-func collectGKEAssets(ctx context.Context, cfg config, log *logp.Logger, listInstanceClient listInstanceAPIClient, listClusterClient listClustersAPIClient, publisher stateless.Publisher) error {
+func collectGKEAssets(ctx context.Context, cfg config, vpcAssetCache *freelru.LRU[string, *vpc], log *logp.Logger, listInstanceClient listInstanceAPIClient, listClusterClient listClustersAPIClient, publisher stateless.Publisher) error {
 
-	clusters, err := getAllGKEClusters(ctx, cfg, listClusterClient)
+	clusters, err := getAllGKEClusters(ctx, cfg, listClusterClient, vpcAssetCache)
 	if err != nil {
 		return err
 	}
@@ -58,6 +59,7 @@ func collectGKEAssets(ctx context.Context, cfg config, log *logp.Logger, listIns
 	indexNamespace := cfg.IndexNamespace
 	assetType := "k8s.cluster"
 	assetKind := "cluster"
+	log.Debug("Publishing kubernetes clusters")
 	for _, cluster := range clusters {
 		var parents []string
 		var children []string
@@ -162,7 +164,7 @@ func makeListClusterRequests(project string, zones []string) []*containerpb.List
 	return requests
 }
 
-func getAllGKEClusters(ctx context.Context, cfg config, client listClustersAPIClient) ([]containerCluster, error) {
+func getAllGKEClusters(ctx context.Context, cfg config, client listClustersAPIClient, vpcAssetCache *freelru.LRU[string, *vpc]) ([]containerCluster, error) {
 	var clusters []containerCluster
 	var zones []string
 	if len(cfg.Regions) > 0 {
@@ -181,12 +183,12 @@ func getAllGKEClusters(ctx context.Context, cfg config, client listClustersAPICl
 			}
 
 			for _, c := range list.Clusters {
-
+				net := getNetSelfLinkFromNetConfig(c.NetworkConfig)
 				clusters = append(clusters, containerCluster{
 					ID:        c.Id,
 					Region:    c.Location,
 					Account:   p,
-					VPC:       c.Network,
+					VPC:       getVpcIdFromLink(net, vpcAssetCache),
 					NodePools: c.NodePools,
 					Labels:    c.ResourceLabels,
 					Metadata: mapstr.M{

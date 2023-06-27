@@ -12,11 +12,13 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.99.0
 	github.com/aws/aws-sdk-go-v2/service/eks v1.27.12
 	github.com/aws/smithy-go v1.13.5
+	github.com/cespare/xxhash v1.1.0
 	github.com/elastic/beats/v7 v7.0.0-alpha2.0.20230126132006-91d4be69ffd7
 	github.com/elastic/elastic-agent-autodiscover v0.5.0
 	github.com/elastic/elastic-agent-libs v0.3.8
 	github.com/elastic/elastic-agent-system-metrics v0.4.5-0.20220927192933-25a985b07d51
 	github.com/elastic/go-concert v0.2.0
+	github.com/elastic/go-freelru v0.6.0
 	github.com/elastic/go-sysinfo v1.9.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/googleapis/gax-go/v2 v2.10.0

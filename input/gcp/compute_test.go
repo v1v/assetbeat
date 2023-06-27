@@ -20,6 +20,9 @@ package gcp
 import (
 	"context"
 	"testing"
+	"time"
+
+	"github.com/elastic/go-freelru"
 
 	compute "cloud.google.com/go/compute/apiv1"
 	"cloud.google.com/go/compute/apiv1/computepb"
@@ -31,6 +34,7 @@ import (
 
 	"github.com/elastic/assetbeat/input/testutil"
 	"github.com/elastic/beats/v7/libbeat/beat"
+	"github.com/elastic/elastic-agent-libs/logp"
 	"github.com/elastic/elastic-agent-libs/mapstr"
 )
 
@@ -66,7 +70,18 @@ func (s *InstancesClientStub) AggregatedList(ctx context.Context, req *computepb
 	return s.AggregatedInstanceListIterator[project]
 }
 
+func getVpcCache() *freelru.LRU[string, *vpc] {
+	vpcAssetsCache, _ := freelru.New[string, *vpc](8192, hashStringXXHASH)
+	nv := vpc{
+		ID: "1",
+	}
+	selfLink := "https://www.googleapis.com/compute/v1/projects/my_project/global/networks/my_network"
+	vpcAssetsCache.AddWithExpire(selfLink, &nv, 60*time.Second)
+	return vpcAssetsCache
+}
+
 func TestGetAllComputeInstances(t *testing.T) {
+	vpcAssetsCache := getVpcCache()
 	var parents []string
 	for _, tt := range []struct {
 		name string
@@ -93,7 +108,7 @@ func TestGetAllComputeInstances(t *testing.T) {
 			instances: map[string]*StubAggregatedInstanceListIterator{
 				"my_project": {
 					ReturnScopedInstancesList: []compute.InstancesScopedListPair{{
-						Key: "europe-west-1",
+						Key: "europe-west1-d",
 						Value: &computepb.InstancesScopedList{
 							Instances: []*computepb.Instance{
 								{
@@ -118,7 +133,7 @@ func TestGetAllComputeInstances(t *testing.T) {
 						"asset.id":             "1",
 						"asset.type":           "gcp.compute.instance",
 						"asset.kind":           "host",
-						"asset.parents":        []string{"network:my_network"},
+						"asset.parents":        []string{"network:1"},
 						"asset.metadata.state": "RUNNING",
 						"cloud.account.id":     "my_project",
 						"cloud.provider":       "gcp",
@@ -141,7 +156,7 @@ func TestGetAllComputeInstances(t *testing.T) {
 			instances: map[string]*StubAggregatedInstanceListIterator{
 				"my_project": {
 					ReturnScopedInstancesList: []compute.InstancesScopedListPair{{
-						Key: "europe-west-1",
+						Key: "europe-west1-d",
 						Value: &computepb.InstancesScopedList{
 							Instances: []*computepb.Instance{
 								{
@@ -155,7 +170,7 @@ func TestGetAllComputeInstances(t *testing.T) {
 				},
 				"my_second_project": {
 					ReturnScopedInstancesList: []compute.InstancesScopedListPair{{
-						Key: "europe-west-1",
+						Key: "europe-west1-d",
 						Value: &computepb.InstancesScopedList{
 							Instances: []*computepb.Instance{
 								{
@@ -216,7 +231,7 @@ func TestGetAllComputeInstances(t *testing.T) {
 				"my_project": {
 					ReturnScopedInstancesList: []compute.InstancesScopedListPair{
 						{
-							Key: "europe-west-1",
+							Key: "europe-west1-d",
 							Value: &computepb.InstancesScopedList{
 								Instances: []*computepb.Instance{
 									{
@@ -266,6 +281,7 @@ func TestGetAllComputeInstances(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			log := logp.NewLogger("mylogger")
 			publisher := testutil.NewInMemoryPublisher()
 			client := InstancesClientStub{AggregatedInstanceListIterator: tt.instances}
 			clientCreator := listInstanceAPIClient{
@@ -273,7 +289,8 @@ func TestGetAllComputeInstances(t *testing.T) {
 					return client.AggregatedList(ctx, req, opts...)
 				},
 			}
-			err := collectComputeAssets(tt.ctx, tt.cfg, clientCreator, publisher)
+
+			err := collectComputeAssets(tt.ctx, tt.cfg, vpcAssetsCache, clientCreator, publisher, log)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedEvents, publisher.Events)
 		})

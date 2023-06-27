@@ -54,6 +54,7 @@ func (s *ClustersClientStub) ListClusters(ctx context.Context, req *containerpb.
 var findGKEProjectRe = regexp.MustCompile("projects/([a-z_-]+)/locations/([0-9a-z_,-]+)")
 
 func TestCollectGKEAssets(t *testing.T) {
+	vpcAssetsCache := getVpcCache()
 	var children []string
 	var parents []string
 	for _, tt := range []struct {
@@ -86,7 +87,10 @@ func TestCollectGKEAssets(t *testing.T) {
 							Id:       "1",
 							Location: "europe-west1",
 							Network:  "my_network",
-							Status:   containerpb.Cluster_RUNNING,
+							NetworkConfig: &containerpb.NetworkConfig{
+								Network: "projects/my_project/global/networks/my_network",
+							},
+							Status: containerpb.Cluster_RUNNING,
 						},
 					},
 				},
@@ -108,7 +112,7 @@ func TestCollectGKEAssets(t *testing.T) {
 						"asset.id":             "1",
 						"asset.type":           "k8s.cluster",
 						"asset.kind":           "cluster",
-						"asset.parents":        []string{"network:my_network"},
+						"asset.parents":        []string{"network:1"},
 						"asset.metadata.state": "RUNNING",
 						"asset.children":       children,
 						"cloud.account.id":     "my_project",
@@ -136,7 +140,10 @@ func TestCollectGKEAssets(t *testing.T) {
 							Id:       "1",
 							Location: "europe-west1",
 							Network:  "my_network",
-							Status:   containerpb.Cluster_RUNNING,
+							NetworkConfig: &containerpb.NetworkConfig{
+								Network: "projects/my_project/global/networks/my_network",
+							},
+							Status: containerpb.Cluster_RUNNING,
 						},
 					},
 				},
@@ -146,7 +153,10 @@ func TestCollectGKEAssets(t *testing.T) {
 							Id:       "42",
 							Location: "us-central",
 							Network:  "",
-							Status:   containerpb.Cluster_STOPPING,
+							NetworkConfig: &containerpb.NetworkConfig{
+								Network: "",
+							},
+							Status: containerpb.Cluster_STOPPING,
 						},
 					},
 				},
@@ -174,7 +184,7 @@ func TestCollectGKEAssets(t *testing.T) {
 						"asset.id":             "1",
 						"asset.type":           "k8s.cluster",
 						"asset.kind":           "cluster",
-						"asset.parents":        []string{"network:my_network"},
+						"asset.parents":        []string{"network:1"},
 						"asset.metadata.state": "RUNNING",
 						"asset.children":       children,
 						"cloud.account.id":     "my_project",
@@ -220,7 +230,10 @@ func TestCollectGKEAssets(t *testing.T) {
 							Id:       "2",
 							Location: "us-west1",
 							Network:  "my_network",
-							Status:   containerpb.Cluster_RUNNING,
+							NetworkConfig: &containerpb.NetworkConfig{
+								Network: "projects/my_project/global/networks/my_network",
+							},
+							Status: containerpb.Cluster_RUNNING,
 						},
 					},
 				},
@@ -241,7 +254,7 @@ func TestCollectGKEAssets(t *testing.T) {
 						"asset.id":             "2",
 						"asset.type":           "k8s.cluster",
 						"asset.kind":           "cluster",
-						"asset.parents":        []string{"network:my_network"},
+						"asset.parents":        []string{"network:1"},
 						"asset.metadata.state": "RUNNING",
 						"asset.children":       children,
 						"cloud.account.id":     "my_project",
@@ -270,13 +283,19 @@ func TestCollectGKEAssets(t *testing.T) {
 							Id:       "2",
 							Location: "us-west1",
 							Network:  "my_network",
-							Status:   containerpb.Cluster_RUNNING,
+							NetworkConfig: &containerpb.NetworkConfig{
+								Network: "projects/my_project/global/networks/my_network",
+							},
+							Status: containerpb.Cluster_RUNNING,
 						},
 						{
 							Id:       "1",
 							Location: "europe-west1",
 							Network:  "my_network",
-							Status:   containerpb.Cluster_RUNNING,
+							NetworkConfig: &containerpb.NetworkConfig{
+								Network: "projects/my_project/global/networks/my_network",
+							},
+							Status: containerpb.Cluster_RUNNING,
 						},
 					},
 				},
@@ -298,7 +317,7 @@ func TestCollectGKEAssets(t *testing.T) {
 						"asset.id":             "2",
 						"asset.type":           "k8s.cluster",
 						"asset.kind":           "cluster",
-						"asset.parents":        []string{"network:my_network"},
+						"asset.parents":        []string{"network:1"},
 						"asset.metadata.state": "RUNNING",
 						"asset.children":       children,
 						"cloud.account.id":     "my_project",
@@ -315,7 +334,7 @@ func TestCollectGKEAssets(t *testing.T) {
 						"asset.id":             "1",
 						"asset.type":           "k8s.cluster",
 						"asset.kind":           "cluster",
-						"asset.parents":        []string{"network:my_network"},
+						"asset.parents":        []string{"network:1"},
 						"asset.metadata.state": "RUNNING",
 						"asset.children":       children,
 						"cloud.account.id":     "my_project",
@@ -343,7 +362,10 @@ func TestCollectGKEAssets(t *testing.T) {
 							Id:       "1",
 							Location: "europe-west1",
 							Network:  "my_network",
-							Status:   containerpb.Cluster_RUNNING,
+							NetworkConfig: &containerpb.NetworkConfig{
+								Network: "projects/my_project/global/networks/my_network",
+							},
+							Status: containerpb.Cluster_RUNNING,
 							NodePools: []*containerpb.NodePool{
 								{
 									Name: "mynodepool",
@@ -390,7 +412,7 @@ func TestCollectGKEAssets(t *testing.T) {
 						"asset.id":             "1",
 						"asset.type":           "k8s.cluster",
 						"asset.kind":           "cluster",
-						"asset.parents":        []string{"network:my_network"},
+						"asset.parents":        []string{"network:1"},
 						"asset.metadata.state": "RUNNING",
 						"asset.children":       []string{"host:123"},
 						"cloud.account.id":     "my_project",
@@ -415,7 +437,7 @@ func TestCollectGKEAssets(t *testing.T) {
 			}
 			publisher := testutil.NewInMemoryPublisher()
 			log := logp.NewLogger("mylogger")
-			err := collectGKEAssets(tt.ctx, tt.cfg, log, listInstanceClientCreator, &listClusterClient, publisher)
+			err := collectGKEAssets(tt.ctx, tt.cfg, vpcAssetsCache, log, listInstanceClientCreator, &listClusterClient, publisher)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedEvents, publisher.Events)
 		})

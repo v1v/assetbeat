@@ -34,6 +34,7 @@ import (
 	conf "github.com/elastic/elastic-agent-libs/config"
 	"github.com/elastic/elastic-agent-libs/logp"
 	"github.com/elastic/go-concert/ctxtool"
+	"github.com/elastic/go-freelru"
 )
 
 func Plugin() input.Plugin {
@@ -56,7 +57,8 @@ func configure(cfg *conf.C) (stateless.Input, error) {
 }
 
 func newAssetsGCP(config config) (*assetsGCP, error) {
-	return &assetsGCP{config}, nil
+	vpcAssetsCache, _ := freelru.New[string, *vpc](8192, hashStringXXHASH)
+	return &assetsGCP{config, vpcAssetsCache}, nil
 }
 
 type config struct {
@@ -76,6 +78,7 @@ func defaultConfig() config {
 
 type assetsGCP struct {
 	config
+	VpcAssetsCache *freelru.LRU[string, *vpc]
 }
 
 func (s *assetsGCP) Name() string { return "assets_gcp" }
@@ -131,7 +134,7 @@ func (s *assetsGCP) collectAll(ctx context.Context, log *logp.Logger, publisher 
 					return client.AggregatedList(ctx, req, opts...)
 				},
 			}
-			err = collectComputeAssets(ctx, s.config, listClient, publisher)
+			err = collectComputeAssets(ctx, s.config, s.VpcAssetsCache, listClient, publisher, log)
 			if err != nil {
 				log.Errorf("error collecting compute assets: %+v", err)
 			}
@@ -161,7 +164,7 @@ func (s *assetsGCP) collectAll(ctx context.Context, log *logp.Logger, publisher 
 					return computeClient.AggregatedList(ctx, req, opts...)
 				},
 			}
-			err = collectGKEAssets(ctx, s.config, log, listClient, client, publisher)
+			err = collectGKEAssets(ctx, s.config, s.VpcAssetsCache, log, listClient, client, publisher)
 			if err != nil {
 				log.Errorf("error collecting GKE assets: %+v", err)
 			}
@@ -171,7 +174,7 @@ func (s *assetsGCP) collectAll(ctx context.Context, log *logp.Logger, publisher 
 		go func() {
 			client, err := compute.NewNetworksRESTClient(ctx, buildClientOptions(s.config)...)
 			if err != nil {
-				log.Errorf("error collecting GKE assets: %+v", err)
+				log.Errorf("error collecting VPC assets: %+v", err)
 			}
 			defer func() {
 				if client != nil {
@@ -181,9 +184,9 @@ func (s *assetsGCP) collectAll(ctx context.Context, log *logp.Logger, publisher 
 			listClient := listNetworkAPIClient{List: func(ctx context.Context, req *computepb.ListNetworksRequest, opts ...gax.CallOption) NetworkIterator {
 				return client.List(ctx, req, opts...)
 			}}
-			err = collectVpcAssets(ctx, s.config, listClient, publisher)
+			err = collectVpcAssets(ctx, s.config, s.VpcAssetsCache, listClient, publisher, log)
 			if err != nil {
-				log.Errorf("error collecting GKE assets: %+v", err)
+				log.Errorf("error collecting VPC assets: %+v", err)
 			}
 		}()
 	}
@@ -191,19 +194,22 @@ func (s *assetsGCP) collectAll(ctx context.Context, log *logp.Logger, publisher 
 		go func() {
 			client, err := compute.NewSubnetworksRESTClient(ctx, buildClientOptions(s.config)...)
 			if err != nil {
-				log.Errorf("error collecting GKE assets: %+v", err)
+				log.Errorf("error collecting Subnet assets: %+v", err)
 			}
 			defer func() {
 				if client != nil {
 					client.Close()
 				}
 			}()
-			listClient := listSubnetworkAPIClient{List: func(ctx context.Context, req *computepb.ListSubnetworksRequest, opts ...gax.CallOption) SubnetIterator {
-				return client.List(ctx, req, opts...)
-			}}
-			err = collectSubnetAssets(ctx, s.config, listClient, publisher)
+
+			listClient := listSubnetworkAPIClient{
+				AggregatedList: func(ctx context.Context, req *computepb.AggregatedListSubnetworksRequest, opts ...gax.CallOption) AggregatedSubnetworkIterator {
+					return client.AggregatedList(ctx, req, opts...)
+				},
+			}
+			err = collectSubnetAssets(ctx, s.config, listClient, publisher, log)
 			if err != nil {
-				log.Errorf("error collecting GKE assets: %+v", err)
+				log.Errorf("error collecting Subnet assets: %+v", err)
 			}
 		}()
 	}

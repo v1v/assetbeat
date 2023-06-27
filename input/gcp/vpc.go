@@ -18,13 +18,18 @@
 package gcp
 
 import (
-	"cloud.google.com/go/compute/apiv1/computepb"
 	"context"
-	"github.com/elastic/assetbeat/input/internal"
-	stateless "github.com/elastic/beats/v7/filebeat/input/v2/input-stateless"
+	"strconv"
+
+	compute "cloud.google.com/go/compute/apiv1"
+	"cloud.google.com/go/compute/apiv1/computepb"
 	"github.com/googleapis/gax-go/v2"
 	"google.golang.org/api/iterator"
-	"strconv"
+
+	"github.com/elastic/assetbeat/input/internal"
+	stateless "github.com/elastic/beats/v7/filebeat/input/v2/input-stateless"
+	"github.com/elastic/elastic-agent-libs/logp"
+	"github.com/elastic/go-freelru"
 )
 
 type NetworkIterator interface {
@@ -38,9 +43,12 @@ type listNetworkAPIClient struct {
 type SubnetIterator interface {
 	Next() (*computepb.Subnetwork, error)
 }
+type AggregatedSubnetworkIterator interface {
+	Next() (compute.SubnetworksScopedListPair, error)
+}
 
 type listSubnetworkAPIClient struct {
-	List func(ctx context.Context, req *computepb.ListSubnetworksRequest, opts ...gax.CallOption) SubnetIterator
+	AggregatedList func(ctx context.Context, req *computepb.AggregatedListSubnetworksRequest, opts ...gax.CallOption) AggregatedSubnetworkIterator
 }
 
 type vpc struct {
@@ -56,17 +64,16 @@ type subnet struct {
 	Region  string
 }
 
-func collectVpcAssets(ctx context.Context, cfg config, client listNetworkAPIClient, publisher stateless.Publisher) error {
-
-	vpcs, err := getAllVPCs(ctx, cfg, client)
-
+func collectVpcAssets(ctx context.Context, cfg config, vpcAssetCache *freelru.LRU[string, *vpc], client listNetworkAPIClient, publisher stateless.Publisher, log *logp.Logger) error {
+	vpcs, err := getAllVPCs(ctx, cfg, vpcAssetCache, client)
 	if err != nil {
 		return err
 	}
-
 	assetType := "gcp.vpc"
 	assetKind := "network"
 	indexNamespace := cfg.IndexNamespace
+
+	log.Debug("Publishing VPCs")
 	for _, vpc := range vpcs {
 
 		internal.Publish(publisher, nil,
@@ -81,7 +88,7 @@ func collectVpcAssets(ctx context.Context, cfg config, client listNetworkAPIClie
 	return nil
 }
 
-func getAllVPCs(ctx context.Context, cfg config, client listNetworkAPIClient) ([]vpc, error) {
+func getAllVPCs(ctx context.Context, cfg config, vpcAssetCache *freelru.LRU[string, *vpc], client listNetworkAPIClient) ([]vpc, error) {
 	var vpcs []vpc
 	for _, project := range cfg.Projects {
 		req := &computepb.ListNetworksRequest{
@@ -89,7 +96,6 @@ func getAllVPCs(ctx context.Context, cfg config, client listNetworkAPIClient) ([
 		}
 
 		it := client.List(ctx, req)
-
 		for {
 			v, err := it.Next()
 			if err == iterator.Done {
@@ -98,19 +104,21 @@ func getAllVPCs(ctx context.Context, cfg config, client listNetworkAPIClient) ([
 			if err != nil {
 				return nil, err
 			}
-			vpcs = append(vpcs, vpc{
+			nv := vpc{
 				ID:      strconv.FormatUint(*v.Id, 10),
 				Account: project,
 				Name:    *v.Name,
-			})
+			}
+			vpcs = append(vpcs, nv)
+			selfLink := *v.SelfLink
+			vpcAssetCache.AddWithExpire(selfLink, &nv, cfg.Period*2)
 		}
 	}
 	return vpcs, nil
 
 }
 
-func collectSubnetAssets(ctx context.Context, cfg config, client listSubnetworkAPIClient, publisher stateless.Publisher) error {
-
+func collectSubnetAssets(ctx context.Context, cfg config, client listSubnetworkAPIClient, publisher stateless.Publisher, log *logp.Logger) error {
 	subnets, err := getAllSubnets(ctx, cfg, client)
 
 	if err != nil {
@@ -120,6 +128,7 @@ func collectSubnetAssets(ctx context.Context, cfg config, client listSubnetworkA
 	assetType := "gcp.subnet"
 	assetKind := "network"
 	indexNamespace := cfg.IndexNamespace
+	log.Debug("Publishing Subnets")
 	for _, subnet := range subnets {
 
 		internal.Publish(publisher, nil,
@@ -138,45 +147,32 @@ func collectSubnetAssets(ctx context.Context, cfg config, client listSubnetworkA
 func getAllSubnets(ctx context.Context, cfg config, client listSubnetworkAPIClient) ([]subnet, error) {
 	var subnets []subnet
 	for _, project := range cfg.Projects {
-		req := &computepb.ListSubnetworksRequest{
+		req := &computepb.AggregatedListSubnetworksRequest{
 			Project: project,
 		}
-
-		it := client.List(ctx, req)
+		it := client.AggregatedList(ctx, req)
 
 		for {
-			s, err := it.Next()
+			subnetScopedPair, err := it.Next()
 			if err == iterator.Done {
 				break
 			}
 			if err != nil {
 				return nil, err
 			}
-			if wantSubnet(s, cfg.Regions) {
-				subnets = append(subnets, subnet{
-					ID:      strconv.FormatUint(*s.Id, 10),
-					Account: project,
-					Name:    *s.Name,
-					Region:  *s.Region,
-				})
+			region := subnetScopedPair.Key
+			if wantRegion(region, cfg.Regions) {
+				for _, s := range subnetScopedPair.Value.Subnetworks {
+					subnets = append(subnets, subnet{
+						ID:      strconv.FormatUint(*s.Id, 10),
+						Account: project,
+						Name:    *s.Name,
+						Region:  *s.Region,
+					})
+				}
 			}
-
 		}
 	}
 	return subnets, nil
 
-}
-
-func wantSubnet(s *computepb.Subnetwork, regions []string) bool {
-	if len(regions) == 0 {
-		return true
-	}
-
-	for _, region := range regions {
-		if region == *s.Region {
-			return true
-		}
-	}
-
-	return false
 }
