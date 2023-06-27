@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	devtools "github.com/elastic/assetbeat/internal/dev-tools"
 	"github.com/magefile/mage/mg"
 	"github.com/magefile/mage/sh"
 )
@@ -40,20 +41,17 @@ func Format() error {
 	if os.Getenv("CI") == "true" {
 		// fails if there are changes
 		if err := sh.RunV("git", "diff", "--quiet"); err != nil {
-			return fmt.Errorf("There are unformatted files; run `mage format` locally and commit the changes to fix.")
+			return fmt.Errorf("there are unformatted files; run `mage format` locally and commit the changes to fix")
 		}
 	}
 
 	return nil
 }
 
-// Build downloads dependencies and builds the assetbeat binary
+// Build builds the assetbeat binary with the default build arguments
 func Build() error {
-	if err := sh.RunV("go", "mod", "download"); err != nil {
-		return err
-	}
-
-	return sh.RunV("go", "build", ".")
+	_, error := devtools.Build(devtools.DefaultBuildArgs())
+	return error
 }
 
 // Lint runs golangci-lint
@@ -67,6 +65,7 @@ func Lint() error {
 	return sh.RunV("./.tools/golangci-lint", "run")
 }
 
+// AddLicenseHeaders add a license header to any *.go file where it is missing
 func AddLicenseHeaders() error {
 	err := installTools()
 	if err != nil {
@@ -76,6 +75,7 @@ func AddLicenseHeaders() error {
 	return sh.RunV("./.tools/go-licenser", "-license", "ASL2")
 }
 
+// CheckLicenseHeaders check if all the *.go files have a license header
 func CheckLicenseHeaders() error {
 	err := installTools()
 	if err != nil {
@@ -115,7 +115,7 @@ func UnitTest() error {
 	return nil
 }
 
-// IntegrationTest runs all integration tests
+// E2ETest runs all end-to-end tests
 func E2ETest() error {
 	fmt.Println("Running end-to-end tests...")
 	return sh.RunV("go", "test", "github.com/elastic/assetbeat/tests/e2e", "-tags=e2e")
@@ -165,47 +165,44 @@ func installTools() error {
 }
 
 // Package packages assetbeat for distribution
-// Use PLATFORMS to control the target platforms. Only linux/amd64 is supported.
-// Use TYPES to control the target Type. Only Docker is supported
+// Use PLATFORMS to control the target platforms. Only linux/amd64 and linux/arm64 are supported.
+// Use TYPES to control the target Type. Only tar.gz and Docker are supported.
 // Example of Usage: PLATFORMS=linux/amd64 TYPES=docker mage package
 func Package() error {
 	start := time.Now()
 	defer func() { fmt.Println("package ran for", time.Since(start)) }()
 
-	platform, ok := os.LookupEnv("PLATFORMS")
-	if !ok {
-		return fmt.Errorf("PLATFORMS env var is not set. Available options are %s", "linux/amd64")
-	}
-	types, ok := os.LookupEnv("TYPES")
-	if !ok {
-		return fmt.Errorf("TYPES env var is not set. Available options are %s", "docker")
-	}
-
-	fmt.Printf("package command called for Platforms=%s and TYPES=%s\n", platform, types)
-	if platform == "linux/amd64" && types == "docker" {
-		filePath := "build/package/assetbeat/assetbeat-linux-amd64.docker/docker-build"
-		executable := filePath + "/assetbeat"
-		dockerfile := filePath + "/Dockerfile"
-
-		fmt.Printf("Creating filepath %s\n", filePath)
-		if err := sh.RunV("mkdir", "-p", filePath); err != nil {
+	for _, platform := range devtools.GetPlatforms() {
+		executablePath, err := devtools.Build(devtools.DefaultCrossBuildArgs(platform))
+		if err != nil {
 			return err
 		}
-		var envMap = map[string]string{
-			"GOOS":   "linux",
-			"GOARCH": "amd64",
-		}
-		fmt.Println("Building assetbeat binary")
-		if err := sh.RunWithV(envMap, "go", "build", "-o", executable); err != nil {
-			return err
-		}
-		fmt.Println("Copying Dockerfile")
-		if err := sh.RunV("cp", "Dockerfile.reference", dockerfile); err != nil {
-			return err
+		for _, packageType := range devtools.GetPackageTypes() {
+			fmt.Printf(">>>>> Packaging assetbeat for platform: %+v packageType:%s\n", platform, packageType)
+			packageSpec := devtools.PackageSpec{
+				Os:             platform.GOOS,
+				Arch:           platform.GOARCH,
+				PackageType:    packageType,
+				ExecutablePath: executablePath,
+				IsSnapshot:     isSnapshot(),
+				ExtraFilesList: devtools.GetDefaultExtraFiles(),
+			}
+			err = devtools.CreatePackage(packageSpec)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
 	return nil
+}
+
+func isSnapshot() bool {
+	isSnapshot, ok := os.LookupEnv("SNAPSHOT")
+	if ok {
+		return isSnapshot == "true"
+	}
+	return false
 }
 
 // GetVersion returns the version of assetbeat
