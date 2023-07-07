@@ -18,13 +18,56 @@
 package dev_tools
 
 import (
+	"fmt"
+	settings "github.com/elastic/assetbeat/cmd"
 	"github.com/elastic/elastic-agent-libs/dev-tools/mage"
 	"github.com/elastic/elastic-agent-libs/dev-tools/mage/gotool"
 	"github.com/magefile/mage/mg"
+	"github.com/magefile/mage/sh"
 	"os"
 )
 
 func GenerateNotice(overrides, rules, noticeTemplate string) error {
+
+	depsFile := generateDepsFile()
+	defer os.Remove(depsFile)
+
+	generator := gotool.NoticeGenerator
+	return generator(
+		generator.Dependencies(depsFile),
+		generator.IncludeIndirect(),
+		generator.Overrides(overrides),
+		generator.Rules(rules),
+		generator.NoticeTemplate(noticeTemplate),
+		generator.NoticeOutput("NOTICE.txt"),
+	)
+}
+
+func GenerateDependencyReport(overrides, rules, dependencyReportTemplate string, isSnapshot bool) error {
+
+	depsFile := generateDepsFile()
+	defer os.Remove(depsFile)
+
+	if err := sh.RunV("mkdir", "-p", defaultPackageFolder); err != nil {
+		return err
+	}
+
+	generator := gotool.NoticeGenerator
+	dependencyReportFilename := fmt.Sprintf("dependencies-%s", settings.Version)
+	if isSnapshot {
+		dependencyReportFilename = dependencyReportFilename + "-SNAPSHOT"
+	}
+	return generator(
+		generator.Dependencies(depsFile),
+		generator.IncludeIndirect(),
+		generator.Overrides(overrides),
+		generator.Rules(rules),
+		generator.NoticeTemplate(dependencyReportTemplate),
+		generator.NoticeOutput(fmt.Sprintf("%s/%s.csv", defaultPackageFolder, dependencyReportFilename)),
+	)
+}
+
+func generateDepsFile() string {
 	mg.Deps(mage.InstallGoNoticeGen, mage.Deps.CheckModuleTidy)
 
 	gotool.Mod.Tidy()     //nolint:errcheck // No value in handling this error.
@@ -32,17 +75,8 @@ func GenerateNotice(overrides, rules, noticeTemplate string) error {
 
 	out, _ := gotool.ListDepsForNotice()
 	depsFile, _ := os.CreateTemp("", "depsout")
-	defer os.Remove(depsFile.Name())
 	_, _ = depsFile.Write([]byte(out))
 	depsFile.Close()
 
-	generator := gotool.NoticeGenerator
-	return generator(
-		generator.Dependencies(depsFile.Name()),
-		generator.IncludeIndirect(),
-		generator.Overrides(overrides),
-		generator.Rules(rules),
-		generator.NoticeTemplate(noticeTemplate),
-		generator.NoticeOutput("NOTICE.txt"),
-	)
+	return depsFile.Name()
 }
