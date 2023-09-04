@@ -19,6 +19,7 @@ package aws
 
 import (
 	"context"
+	"github.com/elastic/assetbeat/input/internal"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -96,7 +97,7 @@ func TestAssetsAWS_collectVPCAssets(t *testing.T) {
 						"cloud.region":                   "eu-west-1",
 					},
 					Meta: mapstr.M{
-						"index": "assets-aws.vpc-default",
+						"index": internal.GetDefaultIndexName(),
 					},
 				},
 				{
@@ -111,7 +112,7 @@ func TestAssetsAWS_collectVPCAssets(t *testing.T) {
 						"cloud.region":             "eu-west-1",
 					},
 					Meta: mapstr.M{
-						"index": "assets-aws.vpc-default",
+						"index": internal.GetDefaultIndexName(),
 					},
 				},
 			},
@@ -123,7 +124,7 @@ func TestAssetsAWS_collectVPCAssets(t *testing.T) {
 			ctx := context.Background()
 			logger := logp.NewLogger("test")
 
-			err := collectVPCAssets(ctx, tt.client(t), tt.region, "", logger, publisher)
+			err := collectVPCAssets(ctx, tt.client(t), tt.region, logger, publisher)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedEvents, publisher.Events)
 		})
@@ -190,7 +191,7 @@ func TestAssetsAWS_collectSubnetAssets(t *testing.T) {
 						"cloud.region":                   "eu-west-1",
 					},
 					Meta: mapstr.M{
-						"index": "assets-aws.subnet-default",
+						"index": internal.GetDefaultIndexName(),
 					},
 				},
 				{
@@ -208,7 +209,7 @@ func TestAssetsAWS_collectSubnetAssets(t *testing.T) {
 						"cloud.region":         "eu-west-1",
 					},
 					Meta: mapstr.M{
-						"index": "assets-aws.subnet-default",
+						"index": internal.GetDefaultIndexName(),
 					},
 				},
 			},
@@ -220,7 +221,7 @@ func TestAssetsAWS_collectSubnetAssets(t *testing.T) {
 			ctx := context.Background()
 			logger := logp.NewLogger("test")
 
-			err := collectSubnetAssets(ctx, tt.client(t), tt.region, "", logger, publisher)
+			err := collectSubnetAssets(ctx, tt.client(t), tt.region, logger, publisher)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedEvents, publisher.Events)
 		})
