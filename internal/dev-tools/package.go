@@ -19,7 +19,7 @@ package dev_tools
 
 import (
 	"fmt"
-	settings "github.com/elastic/assetbeat/cmd"
+	"github.com/elastic/assetbeat/version"
 	"github.com/magefile/mage/sh"
 	"path/filepath"
 	"strings"
@@ -103,7 +103,7 @@ func packageTar(spec PackageSpec) error {
 }
 
 func getPackageTarName(spec PackageSpec) string {
-	tarFileNameElements := []string{"assetbeat", settings.Version}
+	tarFileNameElements := []string{"assetbeat", version.GetVersion()}
 	if spec.IsSnapshot {
 		tarFileNameElements = append(tarFileNameElements, "SNAPSHOT")
 	}
