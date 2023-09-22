@@ -95,6 +95,7 @@ func TestPublishK8sNodeAsset(t *testing.T) {
 		event beat.Event
 
 		assetName  string
+		assetState string
 		assetType  string
 		assetKind  string
 		assetID    string
@@ -110,6 +111,7 @@ func TestPublishK8sNodeAsset(t *testing.T) {
 					"asset.kind":                 "host",
 					"asset.id":                   "60988eed-1885-4b63-9fa4-780206969deb",
 					"asset.ean":                  "host:60988eed-1885-4b63-9fa4-780206969deb",
+					"asset.metadata.state":       "Ready",
 					"asset.parents":              []string{},
 					"kubernetes.node.name":       "ip-172-31-29-242.us-east-2.compute.internal",
 					"kubernetes.node.start_time": &startTime,
@@ -121,6 +123,7 @@ func TestPublishK8sNodeAsset(t *testing.T) {
 			},
 
 			assetName:  "ip-172-31-29-242.us-east-2.compute.internal",
+			assetState: "Ready",
 			assetType:  "k8s.node",
 			assetKind:  "host",
 			assetID:    "60988eed-1885-4b63-9fa4-780206969deb",
@@ -135,6 +138,7 @@ func TestPublishK8sNodeAsset(t *testing.T) {
 				internal.WithAssetKindAndID(tt.assetKind, tt.assetID),
 				internal.WithAssetType(tt.assetType),
 				internal.WithAssetParents(tt.parents),
+				internal.WithAssetMetadata(mapstr.M{"state": tt.assetState}),
 				internal.WithNodeData(tt.assetName, &startTime),
 				internal.WithCloudInstanceId(tt.instanceID),
 			)
